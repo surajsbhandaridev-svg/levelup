@@ -826,7 +826,7 @@
            ==================== */
         .expense-stats-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(4, 1fr);
             gap: 20px;
             margin-bottom: 24px;
         }
@@ -1236,6 +1236,14 @@
                             <div style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">This Month</div>
                             <div class="expense-amount-large" id="exp-month-total">₹0</div>
                         </div>
+                        <div class="expense-stat-card">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div style="color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">Remaining Budget</div>
+                                <button class="chip" style="padding: 2px 8px; font-size: 0.75rem;" onclick="app.promptMonthlyBudget()">Set Budget</button>
+                            </div>
+                            <div class="expense-amount-large" id="exp-remaining-total">₹0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;" id="exp-budget-subtitle">Budget: Not Set</div>
+                        </div>
                     </div>
 
                     <div class="grid-dashboard" style="margin-bottom: 24px;">
@@ -1363,6 +1371,10 @@
                             <div class="form-group">
                                 <label class="form-label">Wake-Up Goal Time</label>
                                 <input type="time" id="setting-wakeup-time" class="form-control" value="04:00">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Monthly Budget (₹)</label>
+                                <input type="number" id="setting-monthly-budget" class="form-control" placeholder="e.g. 50000" step="100">
                             </div>
                         </div>
                         <button class="btn-primary" id="btn-save-profile">Save Profile</button>
@@ -1554,6 +1566,8 @@
                             <option value="Bills">Bills</option>
                             <option value="Health">Health</option>
                             <option value="Subscriptions">Subscriptions</option>
+                            <option value="Borrow">Borrow</option>
+                            <option value="Lend">Lend</option>
                             <option value="Other">Other</option>
                         </select>
                     </div>
@@ -1825,7 +1839,7 @@
         class App {
             constructor() {
                 this.state = {
-                    profile: { name: 'Suraj', wakeupTime: '04:00' },
+                    profile: { name: 'Suraj', wakeupTime: '04:00', monthlyBudget: 0 },
                     xp: 0,
                     level: 1,
                     unlockedAchievements: [],
@@ -2108,6 +2122,7 @@
                 document.getElementById('btn-save-profile').addEventListener('click', async () => {
                     this.state.profile.name = document.getElementById('setting-user-name').value;
                     this.state.profile.wakeupTime = document.getElementById('setting-wakeup-time').value;
+                    this.state.profile.monthlyBudget = parseFloat(document.getElementById('setting-monthly-budget').value) || 0;
                     await this.saveState();
                     this.showToast('Profile updated!');
                     this.renderAll();
@@ -2256,6 +2271,7 @@
 
                 document.getElementById('setting-user-name').value = name;
                 document.getElementById('setting-wakeup-time').value = this.state.profile.wakeupTime || '04:00';
+                document.getElementById('setting-monthly-budget').value = this.state.profile.monthlyBudget || '';
             }
 
             renderDashboard() {
@@ -2396,6 +2412,31 @@
                 }
             }
 
+            async promptMonthlyBudget() {
+                const current = this.state.profile.monthlyBudget || 0;
+                const input = prompt('Enter your Monthly Budget (₹):', current);
+                if (input !== null) {
+                    const val = parseFloat(input);
+                    this.state.profile.monthlyBudget = isNaN(val) || val < 0 ? 0 : val;
+                    await this.saveState();
+                    this.renderExpenses();
+                    this.showToast('Monthly budget updated!');
+                }
+            }
+
+            openEditExpense(expId) {
+                const x = this.expenses.find(e => e.id === expId);
+                if (!x) return;
+                document.getElementById('exp-id').value = x.id;
+                document.getElementById('exp-amount').value = x.amount;
+                document.getElementById('exp-date').value = x.date;
+                document.getElementById('exp-desc').value = x.description;
+                document.getElementById('exp-category').value = x.category;
+                document.getElementById('exp-method').value = x.paymentMethod;
+                document.getElementById('modal-expense-title-text').innerText = 'Edit Expense';
+                document.getElementById('modal-expense-editor').classList.add('active');
+            }
+
             renderExpenses(filterQuery = '') {
                 const today = this.getTodayString();
                 const now = new Date();
@@ -2418,6 +2459,32 @@
                 document.getElementById('exp-week-total').innerText = `₹${weekTotal.toFixed(2)}`;
                 document.getElementById('exp-month-total').innerText = `₹${monthTotal.toFixed(2)}`;
 
+                // Monthly Budget & Remaining Calculation
+                const monthlyBudget = parseFloat(this.state.profile.monthlyBudget) || 0;
+                const remainingElem = document.getElementById('exp-remaining-total');
+                const subtitleElem = document.getElementById('exp-budget-subtitle');
+
+                if (monthlyBudget > 0) {
+                    const remaining = monthlyBudget - monthTotal;
+                    if (remaining >= 0) {
+                        remainingElem.innerText = `₹${remaining.toFixed(2)}`;
+                        remainingElem.style.color = 'var(--accent)';
+                        subtitleElem.innerText = `Budget: ₹${monthlyBudget.toLocaleString()} (₹${monthTotal.toFixed(0)} spent)`;
+                        subtitleElem.style.color = 'var(--text-muted)';
+                    } else {
+                        const over = Math.abs(remaining);
+                        remainingElem.innerText = `₹${over.toFixed(2)} OVER`;
+                        remainingElem.style.color = 'var(--danger)';
+                        subtitleElem.innerText = `Exceeded ₹${monthlyBudget.toLocaleString()} budget by ₹${over.toFixed(0)}`;
+                        subtitleElem.style.color = 'var(--danger)';
+                    }
+                } else {
+                    remainingElem.innerText = 'Not Set';
+                    remainingElem.style.color = 'var(--text-muted)';
+                    subtitleElem.innerText = 'Click "Set Budget" to configure';
+                    subtitleElem.style.color = 'var(--text-dim)';
+                }
+
                 // Expense Table
                 const tbody = document.getElementById('expenses-table-body');
                 const filtered = this.expenses.filter(x => 
@@ -2425,18 +2492,25 @@
                     x.category.toLowerCase().includes(filterQuery)
                 );
 
-                tbody.innerHTML = filtered.map(x => `
-                    <tr>
-                        <td>${x.date}</td>
-                        <td><strong>${x.description}</strong></td>
-                        <td><span class="chip" style="padding: 2px 8px; font-size: 0.75rem;">${x.category}</span></td>
-                        <td>${x.paymentMethod}</td>
-                        <td style="font-weight:700; color: var(--danger);">₹${x.amount.toFixed(2)}</td>
-                        <td>
-                            <button class="btn-danger" style="padding: 2px 6px; font-size: 0.75rem;" onclick="app.deleteExpense('${x.id}')">✕</button>
-                        </td>
-                    </tr>
-                `).join('');
+                tbody.innerHTML = filtered.map(x => {
+                    let catBadgeStyle = '';
+                    if (x.category === 'Borrow') catBadgeStyle = 'background: rgba(245, 158, 11, 0.2); color: var(--warning);';
+                    else if (x.category === 'Lend') catBadgeStyle = 'background: rgba(59, 130, 246, 0.2); color: var(--info);';
+
+                    return `
+                        <tr>
+                            <td>${x.date}</td>
+                            <td><strong>${x.description}</strong></td>
+                            <td><span class="chip" style="padding: 2px 8px; font-size: 0.75rem; ${catBadgeStyle}">${x.category}</span></td>
+                            <td>${x.paymentMethod}</td>
+                            <td style="font-weight:700; color: ${x.category === 'Borrow' ? 'var(--warning)' : 'var(--danger)'};">₹${x.amount.toFixed(2)}</td>
+                            <td>
+                                <button class="btn-secondary" style="padding: 2px 6px; font-size: 0.75rem; margin-right: 4px;" onclick="app.openEditExpense('${x.id}')">✏️</button>
+                                <button class="btn-danger" style="padding: 2px 6px; font-size: 0.75rem;" onclick="app.deleteExpense('${x.id}')">✕</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
 
                 // Expense Chart SVG (Simple Bar Breakdown)
                 const chartBox = document.getElementById('expense-chart-container');
@@ -2452,7 +2526,7 @@
 
                 const maxVal = Math.max(...Object.values(catTotals));
                 let svgHTML = `<svg width="100%" height="180" viewBox="0 0 300 180">`;
-                const colors = ['#7C3AED', '#22C55E', '#F59E0B', '#EF4444', '#3B82F6', '#EC4899', '#8B5CF6'];
+                const colors = ['#7C3AED', '#22C55E', '#F59E0B', '#EF4444', '#3B82F6', '#EC4899', '#8B5CF6', '#14B8A6', '#F97316'];
 
                 categories.forEach((cat, idx) => {
                     const val = catTotals[cat];
